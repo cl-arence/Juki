@@ -12,6 +12,14 @@ private:
     mutable std::mutex mut;
     std::queue<T> data_queue;
     std::condition_variable data_cond;
+    mutable std::condition_variable empty_cond;
+
+    void popping() {
+       data_queue.pop();
+       if (data_queue.empty())
+          empty_cond.notify_all();
+    }
+
 public:
     threadsafe_queue()
     {}
@@ -28,12 +36,18 @@ public:
         data_cond.notify_one();
     }
 
+    void drain() const
+    {
+        std::unique_lock lk{mut};
+        empty_cond.wait(lk, [this]{return data_queue.empty();}  );
+    }
+
     void wait_and_pop(T& value)
     {
         std::unique_lock lk{mut};
         data_cond.wait(lk,[this]{return !data_queue.empty();});
         value=data_queue.front();
-        data_queue.pop();
+        popping();
     }
 
     std::shared_ptr<T> wait_and_pop()
@@ -41,7 +55,7 @@ public:
         std::unique_lock lk{mut};
         data_cond.wait(lk,[this]{return !data_queue.empty();});
         auto res{std::make_shared<T>(data_queue.front())};
-        data_queue.pop();
+        popping();
         return res;
     }
 
@@ -51,7 +65,7 @@ public:
         if(data_queue.empty)
             return false;
         value=data_queue.front();
-        data_queue.pop();
+        popping();
         return true; // Added by Craig
     }
 
@@ -61,7 +75,7 @@ public:
         if(data_queue.empty())
             return std::shared_ptr<T>();
         auto res{std::make_shared<T>(data_queue.front())};
-        data_queue.pop();
+        popping();
         return res;
     }
 
